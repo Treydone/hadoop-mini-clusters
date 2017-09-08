@@ -24,7 +24,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.http.HttpConfig;
-import org.apache.hadoop.minikdc.MiniKdc;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.ssl.KeyStoreTestUtil;
@@ -58,20 +57,18 @@ public class KdcLocalCluster implements MiniCluster {
 
     private ExtendedMiniKdc miniKdc;
 
-    private String orgName;
-    private String orgDomain;
-    private Integer port;
-    private String host;
-    private String baseDir;
-    private String krbInstance;
-    /*private String keytabAbsolutePath;
-    private String keytabFileName;*/
-    private List<String> principals = new ArrayList<>();
-    private String instance;
-    private String transport;
-    private Integer maxTicketLifetime;
-    private Integer maxRenewableLifetime;
-    private Boolean debug;
+    private final String orgName;
+    private final String orgDomain;
+    private final Integer port;
+    private final String host;
+    private final String baseDir;
+    private final String krbInstance;
+    private List<String> principals;
+    private final String instance;
+    private final String transport;
+    private final Integer maxTicketLifetime;
+    private final Integer maxRenewableLifetime;
+    private final Boolean debug;
 
     private Configuration baseConf;
 
@@ -104,14 +101,6 @@ public class KdcLocalCluster implements MiniCluster {
     public File getKrb5conf() {
         return miniKdc.getKrb5conf();
     }
-
-    /*public String getKeytabAbsolutePath() {
-        return keytabAbsolutePath;
-    }*/
-
-    /*public String getKeytabFileName() {
-        return keytabFileName;
-    }*/
 
     public List<String> getPrincipals() {
         return principals;
@@ -148,7 +137,6 @@ public class KdcLocalCluster implements MiniCluster {
         this.host = builder.host;
         this.baseDir = builder.baseDir;
         this.krbInstance = builder.krbInstance;
-        /*this.keytabFileName = builder.keytabFileName;*/
         this.principals = builder.principals;
         this.instance = builder.instance;
         this.transport = builder.transport;
@@ -163,7 +151,6 @@ public class KdcLocalCluster implements MiniCluster {
         private Integer port;
         private String host;
         private String baseDir;
-        /*private String keytabFileName = "test.keytab";*/
         private String krbInstance = Path.WINDOWS ? "127.0.0.1" : "localhost";
         private List<String> principals = DEFAULT_PRINCIPALS;
         private String instance = "DefaultKrbServer";
@@ -196,11 +183,6 @@ public class KdcLocalCluster implements MiniCluster {
             this.baseDir = baseDir;
             return this;
         }
-
-        /*public Builder setKeytabFileName(String keytabFileName) {
-            this.keytabFileName = keytabFileName;
-            return this;
-        }*/
 
         public Builder setKrbInstance(String krbInstance) {
             this.krbInstance = krbInstance;
@@ -261,9 +243,6 @@ public class KdcLocalCluster implements MiniCluster {
             if (kdcLocalCluster.baseDir == null) {
                 throw new IllegalArgumentException("ERROR: Missing required config: KDC BaseDir");
             }
-            /*if (kdcLocalCluster.keytabFileName == null) {
-                throw new IllegalArgumentException("ERROR: Missing required config: KDC KeytabFileName");
-            }*/
             if (kdcLocalCluster.krbInstance == null) {
                 throw new IllegalArgumentException("ERROR: Missing required config: KDC KrbInstance");
             }
@@ -314,14 +293,13 @@ public class KdcLocalCluster implements MiniCluster {
         miniKdc = new ExtendedMiniKdc(conf, new File(baseDir));
         miniKdc.start();
 
-        /*File keytabFile = new File(baseDir, keytabFileName);
-        keytabAbsolutePath = keytabFile.getAbsolutePath();*/
-
         UserGroupInformation ugi = UserGroupInformation.createRemoteUser("guest");
         UserGroupInformation.setLoginUser(ugi);
         String username = UserGroupInformation.getLoginUser().getShortUserName();
-        this.principals = new ArrayList<>(principals);
-        this.principals.add(username);
+
+        List<String> temp = new ArrayList<>(principals);
+        temp.add(username);
+        this.principals = Collections.unmodifiableList(temp);
 
         principals.forEach(p -> {
             try {
@@ -332,10 +310,6 @@ public class KdcLocalCluster implements MiniCluster {
                 throw Throwables.propagate(e);
             }
         });
-        //String[] principals = this.principals.stream().map(s -> s + "/" + krbInstance).toArray(String[]::new);
-        //LOG.info("KDC: Creating default keytab with principals {}", String.join(",", principals));
-        //miniKdc.createPrincipal(keytabFile, principals);
-
 
         baseConf = new Configuration(false);
         SecurityUtil.setAuthenticationMethod(UserGroupInformation.AuthenticationMethod.KERBEROS, baseConf);
@@ -386,7 +360,7 @@ public class KdcLocalCluster implements MiniCluster {
         baseConf.set("hbase.coprocessor.region.classes", "org.apache.hadoop.hbase.security.token.TokenProvider");
 
         // Storm
-        String stormPrincipal = getKrbPrincipalWithRealm(STORM_USER_NAME);
+        //String stormPrincipal = getKrbPrincipalWithRealm(STORM_USER_NAME);
 
         // Yarn
         String yarnPrincipal = getKrbPrincipalWithRealm(YARN_USER_NAME);
