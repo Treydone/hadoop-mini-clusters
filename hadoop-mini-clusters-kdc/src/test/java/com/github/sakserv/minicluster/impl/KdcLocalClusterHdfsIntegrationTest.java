@@ -84,7 +84,6 @@ public class KdcLocalClusterHdfsIntegrationTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                //.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))

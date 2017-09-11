@@ -14,12 +14,15 @@
 
 package com.github.sakserv.minicluster.impl;
 
+import com.github.sakserv.minicluster.auth.Jaas;
 import com.github.sakserv.minicluster.config.ConfigVars;
 import com.github.sakserv.propertyparser.PropertyParser;
+import org.apache.commons.io.FileUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.data.ACL;
 import org.junit.AfterClass;
@@ -28,6 +31,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -35,6 +39,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.Assert.fail;
 
 public class KdcLocalClusterZookeeperIntegrationTest {
 
@@ -59,7 +65,7 @@ public class KdcLocalClusterZookeeperIntegrationTest {
     @BeforeClass
     public static void setUp() throws Exception {
 
-        System.setProperty("sun.security.krb5.debug", "true");
+        //System.setProperty("sun.security.krb5.debug", "true");
 
         // KDC
         kdcLocalCluster = new KdcLocalCluster.Builder()
@@ -78,8 +84,6 @@ public class KdcLocalClusterZookeeperIntegrationTest {
                 .build();
         kdcLocalCluster.start();
 
-        System.setProperty("java.security.krb5.conf", kdcLocalCluster.getKrb5conf().getAbsolutePath());
-
         // Config is statically initialized at this point. But the above configuration results in a different
         // initialization which causes the tests to fail. So the following two changes are required.
 
@@ -97,18 +101,19 @@ public class KdcLocalClusterZookeeperIntegrationTest {
         Field defaultRealm = org.apache.zookeeper.server.auth.KerberosName.class.getDeclaredField("defaultRealm");
         defaultRealm.setAccessible(true);
         defaultRealm.set(null, org.apache.zookeeper.server.util.KerberosUtil.getDefaultRealm());
-        System.err.println("ZOOKEEPER: Using default realm " + org.apache.zookeeper.server.util.KerberosUtil.getDefaultRealm());
 
         // Zookeeper
-        javax.security.auth.login.Configuration.setConfiguration(new Jaas()
-                .addServiceEntry("Server", kdcLocalCluster.getKrbPrincipal("zookeeper"), kdcLocalCluster.getKeytabForPrincipal("zookeeper"), "zookeeper"));
+        Jaas jaas = new Jaas()
+                .addServiceEntry("Server", kdcLocalCluster.getKrbPrincipal("zookeeper"), kdcLocalCluster.getKeytabForPrincipal("zookeeper"), "zookeeper");
+
+        File jaasFile = new File(propertyParser.getProperty(ConfigVars.KDC_BASEDIR_KEY), "zoo.jaas");
+        FileUtils.writeStringToFile(jaasFile, jaas.toFile());
+        javax.security.auth.login.Configuration.setConfiguration(jaas);
 
         Map<String, Object> properties = new HashMap<>();
         properties.put("authProvider.1", "org.apache.zookeeper.server.auth.SASLAuthenticationProvider");
         properties.put("requireClientAuthScheme", "sasl");
-        //properties.put("zookeeper.kerberos.removeHostFromPrincipal", "true");
-        //properties.put("zookeeper.kerberos.removeRealmFromPrincipal", "true");
-        properties.put("zookeeper.sasl.serverconfig", "Server");
+        properties.put("sasl.serverconfig", "Server");
 
         zookeeperLocalCluster = new ZookeeperLocalCluster.Builder()
                 .setPort(Integer.parseInt(propertyParser.getProperty(ConfigVars.ZOOKEEPER_PORT_KEY)))
@@ -117,11 +122,30 @@ public class KdcLocalClusterZookeeperIntegrationTest {
                 .setCustomProperties(properties)
                 .build();
         zookeeperLocalCluster.start();
+    }
+
+    @AfterClass
+    public static void tearDown() throws Exception {
+        zookeeperLocalCluster.stop();
+        kdcLocalCluster.stop();
+    }
+
+    @Test
+    public void testZookeeper() throws Exception {
+
+        try (CuratorFramework client = CuratorFrameworkFactory.newClient(zookeeperLocalCluster.getZookeeperConnectionString(),
+                new ExponentialBackoffRetry(1000, 3))) {
+            client.start();
+            client.getChildren().forPath("/").forEach(System.err::println);
+            fail();
+        } catch (KeeperException.AuthFailedException e) {
+            System.out.println("Not authenticated!");
+        }
 
         System.setProperty("zookeeper.sasl.client", "true");
         System.setProperty("zookeeper.sasl.clientconfig", "Client");
         javax.security.auth.login.Configuration.setConfiguration(new Jaas()
-                .addEntry("Client", "guest", kdcLocalCluster.getKeytabForPrincipal("guest")));
+                .addEntry("Client", kdcLocalCluster.getKrbPrincipalWithRealm("guest"), kdcLocalCluster.getKeytabForPrincipal("guest")));
 
         try (CuratorFramework client = CuratorFrameworkFactory.newClient(zookeeperLocalCluster.getZookeeperConnectionString(),
                 new ExponentialBackoffRetry(1000, 3))) {
@@ -137,16 +161,5 @@ public class KdcLocalClusterZookeeperIntegrationTest {
 
             client.create().withMode(CreateMode.PERSISTENT).withACL(perms).forPath(propertyParser.getProperty(ConfigVars.HBASE_ZNODE_PARENT_KEY));
         }
-    }
-
-    @AfterClass
-    public static void tearDown() throws Exception {
-        zookeeperLocalCluster.stop();
-        kdcLocalCluster.stop();
-    }
-
-    @Test
-    public void testZookeeper() throws Exception {
-
     }
 }

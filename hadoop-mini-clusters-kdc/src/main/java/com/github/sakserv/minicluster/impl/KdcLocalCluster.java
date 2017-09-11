@@ -24,6 +24,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.http.HttpConfig;
+import org.apache.hadoop.minikdc.MiniKdc;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.ssl.KeyStoreTestUtil;
@@ -55,7 +56,7 @@ public class KdcLocalCluster implements MiniCluster {
             HDFS_USER_NAME, HBASE_USER_NAME, YARN_USER_NAME, MRV2_USER_NAME, ZOOKEEPER_USER_NAME, STORM_USER_NAME, OOZIE_USER_NAME, OOZIE_PROXIED_USER_NAME, SPNEGO_USER_NAME
     ));
 
-    private ExtendedMiniKdc miniKdc;
+    private MiniKdc miniKdc;
 
     private final String orgName;
     private final String orgDomain;
@@ -275,6 +276,10 @@ public class KdcLocalCluster implements MiniCluster {
                 .getRealm();
     }
 
+    public String getRealm() {
+        return miniKdc.getRealm();
+    }
+
     public String getKrbPrincipal(String principal) {
         return principal + "/" + krbInstance;
     }
@@ -290,7 +295,7 @@ public class KdcLocalCluster implements MiniCluster {
 
         LOG.info("KDC: Starting MiniKdc");
         configure();
-        miniKdc = new ExtendedMiniKdc(conf, new File(baseDir));
+        miniKdc = new MiniKdc(conf, new File(baseDir));
         miniKdc.start();
 
         UserGroupInformation ugi = UserGroupInformation.createRemoteUser("guest");
@@ -412,7 +417,7 @@ public class KdcLocalCluster implements MiniCluster {
         FileUtils.deleteFolder(baseDir, true);
     }
 
-    public ExtendedMiniKdc getMiniKdc() throws Exception {
+    public MiniKdc getMiniKdc() throws Exception {
         return this.miniKdc;
     }
 }
