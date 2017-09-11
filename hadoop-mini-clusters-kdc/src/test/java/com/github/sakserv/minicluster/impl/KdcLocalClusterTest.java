@@ -60,7 +60,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                //.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
@@ -91,7 +90,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                //.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
@@ -116,7 +114,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                //.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
@@ -142,7 +139,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(null)
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                //.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
@@ -168,7 +164,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(null)
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                ////.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
@@ -194,7 +189,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals((List<String>) null)
-                ////.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
@@ -203,32 +197,6 @@ public class KdcLocalClusterTest {
                 .setDebug(Boolean.parseBoolean(propertyParser.getProperty(ConfigVars.KDC_DEBUG)))
                 .build();
     }
-
-    /*@Test
-    public void testKdcKeytabFileName() {
-        assertEquals(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY),
-                kdcLocalCluster.getKeytabFileName());
-    }
-
-    @Test
-    public void testMissingKdcKeytabFileName() {
-        exception.expect(IllegalArgumentException.class);
-        new KdcLocalCluster.Builder()
-                .setPort(Integer.parseInt(propertyParser.getProperty(ConfigVars.KDC_PORT_KEY)))
-                .setHost(propertyParser.getProperty(ConfigVars.KDC_HOST_KEY))
-                .setBaseDir(propertyParser.getProperty(ConfigVars.KDC_BASEDIR_KEY))
-                .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
-                .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
-                .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                .setKeytabFileName(null)
-                .setKrbInstance(propertyParser.getProperty(ConfigVars.KDC_KRBINSTANCE_KEY))
-                .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
-                .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
-                .setMaxTicketLifetime(Integer.parseInt(propertyParser.getProperty(ConfigVars.KDC_MAX_TICKET_LIFETIME_KEY)))
-                .setMaxRenewableLifetime(Integer.parseInt(propertyParser.getProperty(ConfigVars.KDC_MAX_RENEWABLE_LIFETIME)))
-                .setDebug(Boolean.parseBoolean(propertyParser.getProperty(ConfigVars.KDC_DEBUG)))
-                .build();
-    }*/
 
     @Test
     public void testKdcKrbInstance() {
@@ -246,7 +214,6 @@ public class KdcLocalClusterTest {
                 .setOrgDomain(propertyParser.getProperty(ConfigVars.KDC_ORG_DOMAIN_KEY))
                 .setOrgName(propertyParser.getProperty(ConfigVars.KDC_ORG_NAME_KEY))
                 .setPrincipals(propertyParser.getProperty(ConfigVars.KDC_PRINCIPALS_KEY).split(","))
-                //.setKeytabFileName(propertyParser.getProperty(ConfigVars.KDC_KEYTAB_FILENAME_KEY))
                 .setKrbInstance(null)
                 .setInstance(propertyParser.getProperty(ConfigVars.KDC_INSTANCE_KEY))
                 .setTransport(propertyParser.getProperty(ConfigVars.KDC_TRANSPORT))
