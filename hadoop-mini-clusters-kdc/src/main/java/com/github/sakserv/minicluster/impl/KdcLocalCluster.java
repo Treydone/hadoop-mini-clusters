@@ -27,11 +27,14 @@ import org.apache.hadoop.http.HttpConfig;
 import org.apache.hadoop.minikdc.MiniKdc;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.authentication.util.KerberosUtil;
 import org.apache.hadoop.security.ssl.KeyStoreTestUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IPC_CLIENT_CONNECT_MAX_RETRIES_ON_SASL_KEY;
@@ -291,8 +294,6 @@ public class KdcLocalCluster implements MiniCluster {
     @Override
     public void start() throws Exception {
 
-        cleanUp();
-
         LOG.info("KDC: Starting MiniKdc");
         configure();
         miniKdc = new MiniKdc(conf, new File(baseDir));
@@ -315,7 +316,49 @@ public class KdcLocalCluster implements MiniCluster {
                 throw Throwables.propagate(e);
             }
         });
+        refreshDefaultRealm();
+        prepareSecureConfiguration(username);
+    }
 
+    protected void refreshDefaultRealm() throws Exception {
+        // Config is statically initialized at this point. But the above configuration results in a different
+        // initialization which causes the tests to fail. So the following two changes are required.
+
+        // (1) Refresh Kerberos config.
+        // refresh the config
+        Class<?> configClass;
+        if (System.getProperty("java.vendor").contains("IBM")) {
+            configClass = Class.forName("com.ibm.security.krb5.internal.Config");
+        } else {
+            configClass = Class.forName("sun.security.krb5.Config");
+        }
+        Method refreshMethod = configClass.getMethod("refresh", new Class[0]);
+        refreshMethod.invoke(configClass, new Object[0]);
+        // (2) Reset the default realm.
+        try {
+            Class<?> hadoopAuthClass = Class.forName("org.apache.hadoop.security.authentication.util.KerberosName");
+            Field defaultRealm = hadoopAuthClass.getDeclaredField("defaultRealm");
+            defaultRealm.setAccessible(true);
+            defaultRealm.set(null, KerberosUtil.getDefaultRealm());
+            LOG.info("HADOOP: Using default realm " + KerberosUtil.getDefaultRealm());
+        } catch (ClassNotFoundException e) {
+            // Don't care
+            LOG.info("Class org.apache.hadoop.security.authentication.util.KerberosName not found, Kerberos default realm not updated");
+        }
+
+        try {
+            Class<?> zookeeperAuthClass = Class.forName("org.apache.zookeeper.server.auth.KerberosName");
+            Field defaultRealm = zookeeperAuthClass.getDeclaredField("defaultRealm");
+            defaultRealm.setAccessible(true);
+            defaultRealm.set(null, KerberosUtil.getDefaultRealm());
+            LOG.info("ZOOKEEPER: Using default realm " + KerberosUtil.getDefaultRealm());
+        } catch (ClassNotFoundException e) {
+            // Don't care
+            LOG.info("Class org.apache.zookeeper.server.auth.KerberosName not found, Kerberos default realm not updated");
+        }
+    }
+
+    protected void prepareSecureConfiguration(String username) throws Exception {
         baseConf = new Configuration(false);
         SecurityUtil.setAuthenticationMethod(UserGroupInformation.AuthenticationMethod.KERBEROS, baseConf);
         baseConf.setBoolean(CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTHORIZATION, true);
@@ -328,10 +371,15 @@ public class KdcLocalCluster implements MiniCluster {
         baseConf.set("hadoop.proxyuser." + username + ".hosts", "*");
         baseConf.set("hadoop.proxyuser." + username + ".groups", "*");
 
+        // HTTP
+        String spnegoPrincipal = getKrbPrincipalWithRealm(SPNEGO_USER_NAME);
+        baseConf.set("hadoop.proxyuser." + SPNEGO_USER_NAME + ".groups", "*");
+        baseConf.set("hadoop.proxyuser." + SPNEGO_USER_NAME + ".hosts", "*");
+
         // Oozie
         String ooziePrincipal = getKrbPrincipalWithRealm(OOZIE_USER_NAME);
-        baseConf.set("hadoop.proxyuser.oozie.hosts", "*");
-        baseConf.set("hadoop.proxyuser.oozie.groups", "*");
+        baseConf.set("hadoop.proxyuser." + OOZIE_USER_NAME + ".hosts", "*");
+        baseConf.set("hadoop.proxyuser." + OOZIE_USER_NAME + ".groups", "*");
         baseConf.set("hadoop.user.group.static.mapping.overrides", OOZIE_PROXIED_USER_NAME + "=oozie");
         baseConf.set("oozie.service.HadoopAccessorService.keytab.file", getKeytabForPrincipal(OOZIE_USER_NAME));
         baseConf.set("oozie.service.HadoopAccessorService.kerberos.principal", ooziePrincipal);
@@ -339,7 +387,6 @@ public class KdcLocalCluster implements MiniCluster {
 
         // HDFS
         String hdfsPrincipal = getKrbPrincipalWithRealm(HDFS_USER_NAME);
-        String spnegoPrincipal = getKrbPrincipalWithRealm(SPNEGO_USER_NAME);
         baseConf.set(DFS_NAMENODE_KERBEROS_PRINCIPAL_KEY, hdfsPrincipal);
         baseConf.set(DFS_NAMENODE_KEYTAB_FILE_KEY, getKeytabForPrincipal(HDFS_USER_NAME));
         baseConf.set(DFS_DATANODE_KERBEROS_PRINCIPAL_KEY, hdfsPrincipal);
@@ -363,6 +410,14 @@ public class KdcLocalCluster implements MiniCluster {
         baseConf.set("hbase.master.kerberos.principal", hbasePrincipal);
         baseConf.set("hbase.master.keytab.file", getKeytabForPrincipal(HBASE_USER_NAME));
         baseConf.set("hbase.coprocessor.region.classes", "org.apache.hadoop.hbase.security.token.TokenProvider");
+        baseConf.set("hbase.rest.authentication.kerberos.keytab", getKeytabForPrincipal(SPNEGO_USER_NAME));
+        baseConf.set("hbase.rest.authentication.kerberos.principal", spnegoPrincipal);
+        baseConf.set("hbase.rest.kerberos.principal", hbasePrincipal);
+        baseConf.set("hadoop.proxyuser." + HBASE_USER_NAME + ".groups", "*");
+        baseConf.set("hadoop.proxyuser." + HBASE_USER_NAME + ".hosts", "*");
+
+        //hbase.coprocessor.master.classes -> org.apache.hadoop.hbase.security.access.AccessController
+        //hbase.coprocessor.region.classes -> org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint,org.apache.hadoop.hbase.security.access.AccessController
 
         // Storm
         //String stormPrincipal = getKrbPrincipalWithRealm(STORM_USER_NAME);
@@ -378,7 +433,6 @@ public class KdcLocalCluster implements MiniCluster {
         String mrv2Principal = getKrbPrincipalWithRealm(MRV2_USER_NAME);
         baseConf.set("mapreduce.jobhistory.keytab", getKeytabForPrincipal(MRV2_USER_NAME));
         baseConf.set("mapreduce.jobhistory.principal", mrv2Principal);
-
     }
 
     @Override

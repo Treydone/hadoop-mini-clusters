@@ -24,8 +24,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.security.authentication.util.KerberosName;
-import org.apache.hadoop.security.authentication.util.KerberosUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -33,9 +31,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 
 import static org.junit.Assert.*;
 
@@ -57,24 +52,12 @@ public class KdcLocalClusterHdfsIntegrationTest {
     }
 
     private static KdcLocalCluster kdcLocalCluster;
-    private static HbaseLocalCluster hbaseLocalCluster;
-    private static ZookeeperLocalCluster zookeeperLocalCluster;
     private static HdfsLocalCluster hdfsLocalCluster;
-
-    static void setFinalStatic(Field field, Object newValue) throws Exception {
-        field.setAccessible(true);
-
-        Field modifiersField = Field.class.getDeclaredField("modifiers");
-        modifiersField.setAccessible(true);
-        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
-
-        field.set(null, newValue);
-    }
 
     @BeforeClass
     public static void setUp() throws Exception {
 
-        System.setProperty("sun.security.krb5.debug", "true");
+        //System.setProperty("sun.security.krb5.debug", "true");
 
         // KDC
         kdcLocalCluster = new KdcLocalCluster.Builder()
@@ -92,27 +75,6 @@ public class KdcLocalClusterHdfsIntegrationTest {
                 .setDebug(Boolean.parseBoolean(propertyParser.getProperty(ConfigVars.KDC_DEBUG)))
                 .build();
         kdcLocalCluster.start();
-
-        System.setProperty("java.security.krb5.conf", kdcLocalCluster.getKrb5conf().getAbsolutePath());
-
-        // Config is statically initialized at this point. But the above configuration results in a different
-        // initialization which causes the tests to fail. So the following two changes are required.
-
-        // (1) Refresh Kerberos config.
-        // refresh the config
-        Class<?> classRef;
-        if (System.getProperty("java.vendor").contains("IBM")) {
-            classRef = Class.forName("com.ibm.security.krb5.internal.Config");
-        } else {
-            classRef = Class.forName("sun.security.krb5.Config");
-        }
-        Method refreshMethod = classRef.getMethod("refresh", new Class[0]);
-        refreshMethod.invoke(classRef, new Object[0]);
-        // (2) Reset the default realm.
-        Field defaultRealm = KerberosName.class.getDeclaredField("defaultRealm");
-        defaultRealm.setAccessible(true);
-        defaultRealm.set(null, KerberosUtil.getDefaultRealm());
-        System.err.println("HADOOP: Using default realm " + KerberosUtil.getDefaultRealm());
 
         Configuration baseConf = kdcLocalCluster.getBaseConf();
 
@@ -171,10 +133,9 @@ public class KdcLocalClusterHdfsIntegrationTest {
             UserGroupInformation.setConfiguration(conf);
             FileSystem.get(hdfsFsHandle.getUri(), conf).open(
                     new Path(propertyParser.getProperty(ConfigVars.HDFS_TEST_FILE_KEY)));
-            System.err.println(UserGroupInformation.getLoginUser());
             fail();
         } catch (AccessControlException e) {
-            System.out.println("Not authenticated!");
+            LOG.info("Not authenticated!");
         }
     }
 }

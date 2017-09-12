@@ -16,25 +16,34 @@ package com.github.sakserv.minicluster.impl;
 
 import com.github.sakserv.minicluster.auth.Jaas;
 import com.github.sakserv.minicluster.config.ConfigVars;
+import com.github.sakserv.minicluster.util.FileUtils;
 import com.github.sakserv.propertyparser.PropertyParser;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.security.HBaseKerberosUtils;
-import org.apache.hadoop.security.AccessControlException;
+import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.security.authentication.util.KerberosName;
-import org.apache.hadoop.security.authentication.util.KerberosUtil;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.ZooDefs;
+import org.apache.zookeeper.data.ACL;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -63,15 +72,12 @@ public class KdcLocalClusterHBaseIntegrationTest {
     @BeforeClass
     public static void setUp() throws Exception {
 
-        // Zookeeper
-        zookeeperLocalCluster = new ZookeeperLocalCluster.Builder()
-                .setPort(Integer.parseInt(propertyParser.getProperty(ConfigVars.ZOOKEEPER_PORT_KEY)))
-                .setTempDir(propertyParser.getProperty(ConfigVars.ZOOKEEPER_TEMP_DIR_KEY))
-                .setZookeeperConnectionString(propertyParser.getProperty(ConfigVars.ZOOKEEPER_CONNECTION_STRING_KEY))
-                .build();
-        zookeeperLocalCluster.start();
+        //System.setProperty("sun.security.krb5.debug", "true");
 
-        System.setProperty("sun.security.krb5.debug", "true");
+        // Force clean
+        FileUtils.deleteFolder(propertyParser.getProperty(ConfigVars.ZOOKEEPER_TEMP_DIR_KEY));
+        FileUtils.deleteFolder(propertyParser.getProperty(ConfigVars.HBASE_ROOT_DIR_KEY));
+        FileUtils.deleteFolder(propertyParser.getProperty(ConfigVars.KDC_BASEDIR_KEY));
 
         // KDC
         kdcLocalCluster = new KdcLocalCluster.Builder()
@@ -90,40 +96,56 @@ public class KdcLocalClusterHBaseIntegrationTest {
                 .build();
         kdcLocalCluster.start();
 
-        System.setProperty("java.security.krb5.conf", kdcLocalCluster.getKrb5conf().getAbsolutePath());
-
-        // Config is statically initialized at this point. But the above configuration results in a different
-        // initialization which causes the tests to fail. So the following two changes are required.
-
-        // (1) Refresh Kerberos config.
-        Class<?> classRef;
-        if (System.getProperty("java.vendor").contains("IBM")) {
-            classRef = Class.forName("com.ibm.security.krb5.internal.Config");
-        } else {
-            classRef = Class.forName("sun.security.krb5.Config");
-        }
-        Method refreshMethod = classRef.getMethod("refresh", new Class[0]);
-        refreshMethod.invoke(classRef, new Object[0]);
-        // (2) Reset the default realm.
-        Field defaultRealm = KerberosName.class.getDeclaredField("defaultRealm");
-        defaultRealm.setAccessible(true);
-        defaultRealm.set(null, KerberosUtil.getDefaultRealm());
-        System.err.println("HADOOP: Using default realm " + KerberosUtil.getDefaultRealm());
-
         Configuration baseConf = kdcLocalCluster.getBaseConf();
 
-        // HBase
-        HBaseKerberosUtils.setKeytabFileForTesting(kdcLocalCluster.getKeytabForPrincipal("hbase"));
-        HBaseKerberosUtils.setPrincipalForTesting(kdcLocalCluster.getKrbPrincipalWithRealm("hbase"));
-        assertTrue(HBaseKerberosUtils.isKerberosPropertySetted());
+        // Zookeeper
+        Jaas jaas = new Jaas()
+                .addServiceEntry("Server", kdcLocalCluster.getKrbPrincipal("zookeeper"), kdcLocalCluster.getKeytabForPrincipal("zookeeper"), "zookeeper");
+        javax.security.auth.login.Configuration.setConfiguration(jaas);
 
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("authProvider.1", "org.apache.zookeeper.server.auth.SASLAuthenticationProvider");
+        properties.put("requireClientAuthScheme", "sasl");
+        properties.put("sasl.serverconfig", "Server");
+        properties.put("kerberos.removeHostFromPrincipal", "true");
+        properties.put("kerberos.removeRealmFromPrincipal", "true");
+
+        zookeeperLocalCluster = new ZookeeperLocalCluster.Builder()
+                .setPort(Integer.parseInt(propertyParser.getProperty(ConfigVars.ZOOKEEPER_PORT_KEY)))
+                .setTempDir(propertyParser.getProperty(ConfigVars.ZOOKEEPER_TEMP_DIR_KEY))
+                .setZookeeperConnectionString(propertyParser.getProperty(ConfigVars.ZOOKEEPER_CONNECTION_STRING_KEY))
+                .setCustomProperties(properties)
+                .build();
+        zookeeperLocalCluster.start();
+
+        // HBase
+        UserGroupInformation.setConfiguration(baseConf);
+
+        System.setProperty("zookeeper.sasl.client", "true");
+        System.setProperty("zookeeper.sasl.clientconfig", "Client");
         javax.security.auth.login.Configuration.setConfiguration(new Jaas()
-                        .addEntry("HBaseServer", kdcLocalCluster.getKrbPrincipalWithRealm("hbase"), kdcLocalCluster.getKeytabForPrincipal("hbase"))
-                //.addEntry("Client", "zookeeper", kdcLocalCluster.getKeytabForPrincipal("guest"))
-        );
+                .addEntry("Client", kdcLocalCluster.getKrbPrincipalWithRealm("hbase"), kdcLocalCluster.getKeytabForPrincipal("hbase")));
+
+        try (CuratorFramework client = CuratorFrameworkFactory.newClient(zookeeperLocalCluster.getZookeeperConnectionString(),
+                new ExponentialBackoffRetry(1000, 3))) {
+            client.start();
+
+            List<ACL> perms = new ArrayList<>();
+            perms.add(new ACL(ZooDefs.Perms.ALL, ZooDefs.Ids.AUTH_IDS));
+            perms.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+
+            client.create().withMode(CreateMode.PERSISTENT).withACL(perms).forPath(propertyParser.getProperty(ConfigVars.HBASE_ZNODE_PARENT_KEY));
+        }
+
+        Jaas jaasHbaseClient = new Jaas()
+                .addEntry("Client", kdcLocalCluster.getKrbPrincipalWithRealm("hbase"), kdcLocalCluster.getKeytabForPrincipal("hbase"));
+        javax.security.auth.login.Configuration.setConfiguration(jaasHbaseClient);
+        File jaasHbaseClientFile = new File(propertyParser.getProperty(ConfigVars.KDC_BASEDIR_KEY), "hbase-client.jaas");
+        org.apache.commons.io.FileUtils.writeStringToFile(jaasHbaseClientFile, jaasHbaseClient.toFile());
 
         Configuration hbaseConfig = HBaseConfiguration.create();
         hbaseConfig.addResource(baseConf);
+
         hbaseLocalCluster = new HbaseLocalCluster.Builder()
                 .setHbaseMasterPort(
                         Integer.parseInt(propertyParser.getProperty(ConfigVars.HBASE_MASTER_PORT_KEY)))
@@ -157,28 +179,56 @@ public class KdcLocalClusterHBaseIntegrationTest {
         assertTrue(UserGroupInformation.isLoginKeytabBased());
 
         Configuration configuration = hbaseLocalCluster.getHbaseConfiguration();
+        configuration.set("hbase.client.retries.number", "1");
+        configuration.set("hbase.client.pause", "1000");
+        configuration.set("zookeeper.recovery.retry", "1");
 
         // Write data
-        final HBaseAdmin admin = new HBaseAdmin(configuration);
+        try (Connection connection = ConnectionFactory.createConnection(configuration)) {
+            Admin admin = connection.getAdmin();
 
-        TableName tableName = TableName.valueOf("test-kdc");
-        if (admin.tableExists(tableName)) {
-            admin.disableTable(tableName);
-            admin.deleteTable(tableName);
+            TableName tableName = TableName.valueOf("test-kdc");
+            if (admin.tableExists(tableName)) {
+                admin.disableTable(tableName);
+                admin.deleteTable(tableName);
+            }
+            admin.createTable(new HTableDescriptor(tableName).addFamily(new HColumnDescriptor("cf")));
+
+            try (BufferedMutator mutator = connection.getBufferedMutator(tableName)) {
+                mutator.mutate(new Put(Bytes.toBytes("key")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("col1"), Bytes.toBytes("azerty")));
+            }
         }
 
         // Log out
+        LOG.info("Logout...");
         UserGroupInformation.getLoginUser().logoutUserFromKeytab();
-
         UserGroupInformation.reset();
 
         try {
-            Configuration conf = new Configuration();
-            UserGroupInformation.setConfiguration(conf);
-            // TODO
-            System.err.println(UserGroupInformation.getLoginUser());
+            Configuration unauthenticatedConfiguration = HBaseConfiguration.create();
+            hbaseLocalCluster.configure(unauthenticatedConfiguration);
+            unauthenticatedConfiguration.set("hbase.client.retries.number", "1");
+            unauthenticatedConfiguration.set("hbase.client.pause", "1000");
+            unauthenticatedConfiguration.set("zookeeper.recovery.retry", "1");
+
+            UserGroupInformation.setConfiguration(unauthenticatedConfiguration);
+            try (Connection connection = ConnectionFactory.createConnection(unauthenticatedConfiguration)) {
+                Admin admin = connection.getAdmin();
+
+                TableName tableName = TableName.valueOf("test-kdc2");
+                if (admin.tableExists(tableName)) {
+                    admin.disableTable(tableName);
+                    admin.deleteTable(tableName);
+                }
+
+                try (BufferedMutator mutator = connection.getBufferedMutator(tableName)) {
+                    mutator.mutate(new Put(Bytes.toBytes("key")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("col1"), Bytes.toBytes("azerty")));
+                }
+            }
             fail();
-        } catch (AccessControlException e) {
+        } catch (RetriesExhaustedException e) {
+            LOG.info("Alright, this is expected!", e);
+            assertTrue(e.getCause() instanceof IOException);
             System.out.println("Not authenticated!");
         }
     }
